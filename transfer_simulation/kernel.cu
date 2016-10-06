@@ -9,9 +9,9 @@
 #define MIN_TEMP 0.0001f
 #define SPEED   0.25f
 
-texture<float> texConstSrc;
-texture<float> texIn;
-texture<float> texOut;
+texture<float, 2> texConstSrc;
+texture<float, 2> texIn;
+texture<float, 2> texOut;
 
 __global__ void copy_const_kernel(float *iptr)
 {
@@ -20,7 +20,7 @@ __global__ void copy_const_kernel(float *iptr)
 	int y = threadIdx.y + blockDim.y * blockIdx.y;
 	int offset = x + y * blockDim.x * gridDim.x;
 
-	float c = tex1Dfetch(texConstSrc, offset);
+	float c = tex2D(texConstSrc, x, y);
 	if (c != 0)
 		iptr[offset] = c;
 }
@@ -39,29 +39,30 @@ __global__ void blend_kernel(float *dst, bool distOut)
 	if (x == DIM - 1)
 		right--;
 
+	/*No need treating boundary specially
 	int top = offset - DIM;
 	int bottom = offset + DIM;
 	if (y == 0)
 		top += DIM;
 	if (y == DIM - 1)
 		bottom -= DIM;
-
+	*/
 	float t, l, c, r, b;
 	if (distOut)
 	{
-		t = tex1Dfetch(texIn, top);
-		l = tex1Dfetch(texIn, left);
-		c= tex1Dfetch(texIn, offset);
-		r = tex1Dfetch(texIn, right);
-		b = tex1Dfetch(texIn, bottom);
+		t = tex2D(texIn, x, y - 1);
+		l = tex2D(texIn, x - 1, y);
+		c = tex2D(texIn, x, y);
+		r = tex2D(texIn, x + 1, y);
+		b = tex2D(texIn, x, y + 1);
 	}
 	else
 	{
-		t = tex1Dfetch(texOut, top);
-		l = tex1Dfetch(texOut, left);
-		c = tex1Dfetch(texOut, offset);
-		r = tex1Dfetch(texOut, right);
-		b = tex1Dfetch(texOut, bottom);
+		t = tex2D(texOut, x, y - 1);
+		l = tex2D(texOut, x - 1, y);
+		c = tex2D(texOut, x, y);
+		r = tex2D(texOut, x + 1, y);
+		b = tex2D(texOut, x, y + 1);
 	}
 	dst[offset] = c + SPEED * (t + b + l + r - 4 * c);
 }
@@ -145,10 +146,10 @@ int main()
 	cudaMalloc((void**)&data.dev_inSrc, bitmap.image_size());
 	cudaMalloc((void**)&data.dev_outSrc, bitmap.image_size());
 	cudaMalloc((void**)&data.dev_constSrc, bitmap.image_size());
-	cudaBindTexture(NULL, texConstSrc, data.dev_constSrc, bitmap.image_size());
-	cudaBindTexture(NULL, texIn, data.dev_inSrc, bitmap.image_size());
-	cudaBindTexture(NULL, texOut, data.dev_outSrc, bitmap.image_size());
-
+	cudaChannelFormatDesc desc = cudaCreateChannelDesc<float>();
+	cudaBindTexture2D(NULL, texConstSrc, data.dev_constSrc, desc, DIM, DIM, sizeof(float) * DIM);
+	cudaBindTexture2D(NULL, texIn, data.dev_inSrc, desc, DIM, DIM, sizeof(float) * DIM);
+	cudaBindTexture2D(NULL, texOut, data.dev_outSrc, desc, DIM, DIM, sizeof(float) * DIM);
 	float *temp = (float*)malloc(bitmap.image_size());
 	for (int i = 0; i < DIM * DIM; i++)
 	{
